@@ -138,18 +138,28 @@ func (app *App) getSuggestedTags(
 		return nil, fmt.Errorf("error getting response from LLM: %v", err)
 	}
 
-	response := stripReasoning(completion.Choices[0].Content)
+	// DIAG-2026-05-07 (parser-empty-tags): dump the tag-suggestion pipeline at
+	// each transformation so we can see where the [] tags are being produced.
+	// Remove or downgrade to Debugf once the bug is identified and fixed.
+	rawContent := completion.Choices[0].Content
+	logger.Infof("DIAG getSuggestedTags raw LLM content (len=%d): %q", len(rawContent), rawContent)
+
+	response := stripReasoning(rawContent)
+	logger.Infof("DIAG getSuggestedTags after stripReasoning (len=%d): %q", len(response), response)
 
 	suggestedTags := strings.Split(response, ",")
 	for i, tag := range suggestedTags {
 		suggestedTags[i] = strings.TrimSpace(tag)
 	}
+	logger.Infof("DIAG getSuggestedTags after split+trim (count=%d): %v", len(suggestedTags), suggestedTags)
 
 	// append the original tags to the suggested tags
 	suggestedTags = append(suggestedTags, originalTags...)
 	// Remove duplicates
 	slices.Sort(suggestedTags)
 	suggestedTags = slices.Compact(suggestedTags)
+	logger.Infof("DIAG getSuggestedTags after dedup with originalTags (count=%d, createNewTags=%v, availableTags-len=%d): %v",
+		len(suggestedTags), createNewTags, len(availableTags), suggestedTags)
 
 	// Filter out tags that are not in the available tags list (unless CREATE_NEW_TAGS is enabled)
 	if createNewTags {
