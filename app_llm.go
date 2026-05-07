@@ -140,12 +140,23 @@ func (app *App) getSuggestedTags(
 
 	// DIAG-2026-05-07 (parser-empty-tags): dump the tag-suggestion pipeline at
 	// each transformation so we can see where the [] tags are being produced.
-	// Remove or downgrade to Debugf once the bug is identified and fixed.
+	// Remove or downgrade to Debugf once we have enough forensic data.
 	rawContent := completion.Choices[0].Content
 	logger.Infof("DIAG getSuggestedTags raw LLM content (len=%d): %q", len(rawContent), rawContent)
 
 	response := stripReasoning(rawContent)
 	logger.Infof("DIAG getSuggestedTags after stripReasoning (len=%d): %q", len(response), response)
+
+	// Some prompt templates use "(empty)" as a deliberate sentinel meaning
+	// "this document has no tags worth applying" (e.g. the CIS immigration-legal
+	// pilot prompt instructs the model to output (empty) for non-immigration
+	// docs as a scope-narrowing escape hatch). Without this guard the wrapper
+	// would treat the literal string "(empty)" as a single tag name and apply
+	// it to the document. Match case-insensitively after whitespace trim.
+	if strings.EqualFold(strings.TrimSpace(response), "(empty)") {
+		logger.Infof("DIAG getSuggestedTags sentinel '(empty)' detected; returning original tags unchanged (no LLM-suggested additions)")
+		return originalTags, nil
+	}
 
 	suggestedTags := strings.Split(response, ",")
 	for i, tag := range suggestedTags {
